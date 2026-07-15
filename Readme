@@ -1,0 +1,84 @@
+# Customer Churn Prediction (ML Classification Project)
+
+Predicts whether a telecom customer will churn (leave the service) based on
+their account details, usage, and support history. Intermediate-level project
+covering the full ML pipeline: data generation → EDA → preprocessing →
+model training/comparison → evaluation → inference.
+
+## Why a synthetic dataset?
+
+This project generates a **synthetic but realistic** dataset (`data_generator.py`)
+that mirrors the well-known Telco Customer Churn dataset in structure and
+feature relationships (contract type, tenure, monthly charges, support calls,
+etc.), with churn probability driven by real business logic plus noise —
+not random labels. It also injects missing values so `preprocessing.py` has
+genuine cleaning work to do. Swap in a real CSV with the same columns any
+time by replacing `data/customer_churn.csv`.
+
+## Project structure
+
+```
+churn_project/
+├── requirements.txt      # dependencies
+├── utils.py               # shared paths, column config, helpers
+├── data_generator.py      # step 1: creates data/customer_churn.csv
+├── eda.py                 # step 2: exploratory analysis + charts
+├── preprocessing.py       # step 3: cleaning, encoding, split, scaling
+├── train_model.py         # step 4: trains & compares 3 models
+├── evaluate.py             # step 5: test-set metrics + charts
+├── predict.py              # step 6: inference on new customers
+├── data/                   # generated CSVs (created on run)
+├── models/                 # saved model + encoders + scaler (created on run)
+└── outputs/                # saved PNG charts (created on run)
+```
+
+## Setup
+
+```bash
+pip install -r requirements.txt
+```
+
+## How to run (in order)
+
+```bash
+python data_generator.py   # 1. create the dataset
+python eda.py               # 2. explore it, save charts to outputs/
+python preprocessing.py     # 3. clean + encode + split + scale
+python train_model.py       # 4. train Logistic Regression / Random Forest / Gradient Boosting, keep the best
+python evaluate.py          # 5. evaluate the best model on the test set
+python predict.py           # 6. run a demo prediction on two sample customers
+```
+
+## Models compared
+
+| Model               | 5-fold CV ROC-AUC |
+|---------------------|-------------------|
+| Logistic Regression | ~0.71              |
+| Random Forest        | ~0.72 (best)        |
+| Gradient Boosting     | ~0.72               |
+
+`class_weight="balanced"` is used on Logistic Regression and Random Forest so
+the model doesn't just ignore churners to chase raw accuracy — recall on the
+churn class matters more than overall accuracy in a real retention use case.
+
+## Using `predict.py` in your own code
+
+```python
+from predict import predict_churn
+
+result = predict_churn({
+    "gender": "Female", "senior_citizen": 0, "partner": "Yes",
+    "dependents": "No", "tenure_months": 3, "contract_type": "Month-to-month",
+    "internet_service": "Fiber optic", "tech_support": "No",
+    "payment_method": "Electronic check", "monthly_charges": 89.5,
+    "total_charges": 268.5, "num_support_calls": 4,
+})
+print(result)  # {'churn_prediction': 'Yes', 'churn_probability': 0.87}
+```
+
+## Possible extensions
+
+- Hyperparameter tuning with `GridSearchCV` / `RandomizedSearchCV`
+- SHAP values for per-customer explainability
+- Wrap `predict_churn` in a small Flask/FastAPI service
+- Try SMOTE for oversampling instead of `class_weight`

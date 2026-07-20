@@ -1,0 +1,93 @@
+"""
+evaluate.py
+-----------
+Loads the trained model and evaluates it on the untouched test set:
+  - Classification report (precision/recall/F1)
+  - Confusion matrix (saved as PNG)
+  - ROC curve + AUC (saved as PNG)
+  - Feature importance (saved as PNG, for tree-based models)
+
+Run:
+    python evaluate.py
+"""
+
+import matplotlib
+matplotlib.use("Agg")
+
+import joblib
+import matplotlib.pyplot as plt
+import pandas as pd
+import seaborn as sns
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    RocCurveDisplay,
+    classification_report,
+    confusion_matrix,
+    roc_auc_score,
+)
+
+from utils import MODEL_PATH, OUTPUT_DIR, TARGET_COLUMN, TEST_DATA_PATH, ensure_dirs, print_section
+
+
+def load_test_data():
+    df = pd.read_csv(TEST_DATA_PATH)
+    X = df.drop(columns=[TARGET_COLUMN])
+    y = df[TARGET_COLUMN]
+    return X, y
+
+
+def plot_confusion_matrix(y_true, y_pred, path):
+    cm = confusion_matrix(y_true, y_pred)
+    disp = ConfusionMatrixDisplay(cm, display_labels=["No Churn", "Churn"])
+    disp.plot(cmap="Blues", values_format="d")
+    plt.title("Confusion Matrix")
+    plt.tight_layout()
+    plt.savefig(path, dpi=120)
+    plt.close()
+
+
+def plot_roc_curve(model, X_test, y_test, path):
+    RocCurveDisplay.from_estimator(model, X_test, y_test)
+    plt.title("ROC Curve")
+    plt.tight_layout()
+    plt.savefig(path, dpi=120)
+    plt.close()
+
+
+def plot_feature_importance(model, feature_names, path):
+    if not hasattr(model, "feature_importances_"):
+        print("Model has no feature_importances_ attribute; skipping plot.")
+        return
+    importances = pd.Series(model.feature_importances_, index=feature_names)
+    importances = importances.sort_values(ascending=True)
+
+    plt.figure(figsize=(7, 6))
+    importances.plot(kind="barh", color="#4C72B0")
+    plt.title("Feature Importance")
+    plt.tight_layout()
+    plt.savefig(path, dpi=120)
+    plt.close()
+
+
+if __name__ == "__main__":
+    ensure_dirs()
+    print_section("Loading model and test data")
+    bundle = joblib.load(MODEL_PATH)
+    model, model_name = bundle["model"], bundle["name"]
+    X_test, y_test = load_test_data()
+    print(f"Model: {model_name} | Test samples: {len(X_test)}")
+
+    y_pred = model.predict(X_test)
+    y_proba = model.predict_proba(X_test)[:, 1]
+
+    print_section("Classification report")
+    print(classification_report(y_test, y_pred, target_names=["No Churn", "Churn"]))
+
+    auc = roc_auc_score(y_test, y_proba)
+    print(f"ROC-AUC: {auc:.4f}")
+
+    print_section("Saving evaluation plots to outputs/")
+    plot_confusion_matrix(y_test, y_pred, f"{OUTPUT_DIR}/eval_confusion_matrix.png")
+    plot_roc_curve(model, X_test, y_test, f"{OUTPUT_DIR}/eval_roc_curve.png")
+    plot_feature_importance(model, X_test.columns, f"{OUTPUT_DIR}/eval_feature_importance.png")
+    print("Done. Check the outputs/ folder for PNG charts.")

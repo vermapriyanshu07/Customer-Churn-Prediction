@@ -1,0 +1,76 @@
+"""
+train_model.py
+---------------
+Trains several classification models on the preprocessed churn data,
+compares them with cross-validation, and saves the best-performing
+model to disk for later evaluation / inference.
+
+Models compared:
+  - Logistic Regression   (simple, interpretable baseline)
+  - Random Forest          (handles non-linear interactions well)
+  - Gradient Boosting       (usually strongest of the three here)
+
+Run:
+    python train_model.py
+"""
+
+import joblib
+import pandas as pd
+from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
+from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+
+from utils import MODEL_PATH, TARGET_COLUMN, TRAIN_DATA_PATH, ensure_dirs, print_section
+
+RANDOM_SEED = 42
+
+
+def load_train_data():
+    df = pd.read_csv(TRAIN_DATA_PATH)
+    X = df.drop(columns=[TARGET_COLUMN])
+    y = df[TARGET_COLUMN]
+    return X, y
+
+
+def get_candidate_models():
+    return {
+        "Logistic Regression": LogisticRegression(
+            max_iter=1000, random_state=RANDOM_SEED, class_weight="balanced"
+        ),
+        "Random Forest": RandomForestClassifier(
+            n_estimators=300,
+            max_depth=8,
+            random_state=RANDOM_SEED,
+            n_jobs=-1,
+            class_weight="balanced",
+        ),
+        "Gradient Boosting": GradientBoostingClassifier(
+            n_estimators=200, learning_rate=0.08, max_depth=3, random_state=RANDOM_SEED
+        ),
+    }
+
+
+if __name__ == "__main__":
+    ensure_dirs()
+    print_section("Loading training data")
+    X_train, y_train = load_train_data()
+    print(f"Training samples: {len(X_train)}, Features: {X_train.shape[1]}")
+
+    print_section("Cross-validating candidate models (5-fold ROC-AUC)")
+    models = get_candidate_models()
+    scores = {}
+    for name, model in models.items():
+        cv_scores = cross_val_score(
+            model, X_train, y_train, cv=5, scoring="roc_auc", n_jobs=-1
+        )
+        scores[name] = cv_scores.mean()
+        print(f"  {name:<22} AUC = {cv_scores.mean():.4f}  (+/- {cv_scores.std():.4f})")
+
+    best_name = max(scores, key=scores.get)
+    print_section(f"Best model: {best_name} (AUC = {scores[best_name]:.4f})")
+
+    best_model = models[best_name]
+    best_model.fit(X_train, y_train)
+
+    joblib.dump({"model": best_model, "name": best_name}, MODEL_PATH)
+    print(f"Saved trained model -> {MODEL_PATH}")

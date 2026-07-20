@@ -1,0 +1,119 @@
+"""
+preprocessing.py
+-----------------
+Cleans the raw churn dataset and prepares it for modeling:
+  1. Handle missing values
+  2. Encode categorical columns (Label Encoding, stored for reuse)
+  3. Train/test split (stratified on target)
+  4. Scale numerical features (fit on train only, to avoid leakage)
+  5. Save processed train/test CSVs + the fitted encoders/scaler
+
+Run:
+    python preprocessing.py
+"""
+
+import joblib
+import pandas as pd
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import LabelEncoder, StandardScaler
+
+from utils import (
+    CATEGORICAL_COLUMNS,
+    ENCODERS_PATH,
+    FEATURE_COLUMNS_PATH,
+    MODEL_DIR,
+    NUMERICAL_COLUMNS,
+    RAW_DATA_PATH,
+    SCALER_PATH,
+    TARGET_COLUMN,
+    TEST_DATA_PATH,
+    TRAIN_DATA_PATH,
+    ensure_dirs,
+    print_section,
+)
+
+RANDOM_SEED = 42
+TEST_SIZE = 0.2
+
+
+def load_raw_data():
+    return pd.read_csv(RAW_DATA_PATH)
+
+
+def handle_missing_values(df):
+    """Fill missing total_charges with the median (robust to outliers)."""
+    before = df["total_charges"].isna().sum()
+    df["total_charges"] = df["total_charges"].fillna(df["total_charges"].median())
+    print(f"Filled {before} missing 'total_charges' values with the median.")
+    return df
+
+
+def encode_target(df):
+    df[TARGET_COLUMN] = df[TARGET_COLUMN].map({"Yes": 1, "No": 0})
+    return df
+
+
+def encode_categoricals(df, encoders=None, fit=True):
+    """Label-encode categorical columns. Reuses fitted encoders at inference time."""
+    encoders = encoders or {}
+    for col in CATEGORICAL_COLUMNS:
+        if fit:
+            le = LabelEncoder()
+            df[col] = le.fit_transform(df[col].astype(str))
+            encoders[col] = le
+        else:
+            le = encoders[col]
+            # Map unseen categories to a safe default (first known class)
+            df[col] = df[col].astype(str).apply(
+                lambda v: v if v in le.classes_ else le.classes_[0]
+            )
+            df[col] = le.transform(df[col])
+    return df, encoders
+
+
+if __name__ == "__main__":
+    ensure_dirs()
+    print_section("Loading raw data")
+    df = load_raw_data()
+    df = df.drop(columns=["customer_id"])  # not a predictive feature
+
+    print_section("Handling missing values")
+    df = handle_missing_values(df)
+
+    print_section("Encoding target and categorical columns")
+    df = encode_target(df)
+    df, encoders = encode_categoricals(df, fit=True)
+
+    feature_columns = [c for c in df.columns if c != TARGET_COLUMN]
+
+    print_section("Train/test split (stratified, 80/20)")
+    X = df[feature_columns]
+    y = df[TARGET_COLUMN]
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=TEST_SIZE, random_state=RANDOM_SEED, stratify=y
+    )
+    print(f"Train size: {len(X_train)}, Test size: {len(X_test)}")
+
+    print_section("Scaling numerical features (fit on train only)")
+    scaler = StandardScaler()
+    X_train[NUMERICAL_COLUMNS] = scaler.fit_transform(X_train[NUMERICAL_COLUMNS])
+    X_test[NUMERICAL_COLUMNS] = scaler.transform(X_test[NUMERICAL_COLUMNS])
+
+    train_df = X_train.copy()
+    train_df[TARGET_COLUMN] = y_train.values
+    test_df = X_test.copy()
+    test_df[TARGET_COLUMN] = y_test.values
+
+    train_df.to_csv(TRAIN_DATA_PATH, index=False)
+    test_df.to_csv(TEST_DATA_PATH, index=False)
+
+    joblib.dump(scaler, SCALER_PATH)
+    joblib.dump(encoders, ENCODERS_PATH)
+    joblib.dump(feature_columns, FEATURE_COLUMNS_PATH)
+
+    print_section("Saved artifacts")
+    print(f"  Train data -> {TRAIN_DATA_PATH}")
+    print(f"  Test data  -> {TEST_DATA_PATH}")
+    print(f"  Scaler     -> {SCALER_PATH}")
+    print(f"  Encoders   -> {ENCODERS_PATH}")
+    print(f"  Features   -> {FEATURE_COLUMNS_PATH}")

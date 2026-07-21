@@ -10,7 +10,6 @@ Loads the trained model and evaluates it on the untouched test set:
 Run:
     python evaluate.py
 """
-
 import matplotlib
 matplotlib.use("Agg")
 

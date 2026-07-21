@@ -6,7 +6,6 @@ Loads the trained model and evaluates it on the untouched test set:
   - Confusion matrix (saved as PNG)
   - ROC curve + AUC (saved as PNG)
   - Feature importance (saved as PNG, for tree-based models)
-
 Run:
     python evaluate.py
 """
